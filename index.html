@@ -329,9 +329,10 @@ async function J(url, opts={}){
 /* ---------- Hyperliquid endpoint ---------- */
 const HL = 'https://api.hyperliquid.xyz/info';
 function hlPost(body){
-  // text/plain is a CORS-safelisted content type, so the request stays "simple"
-  // and skips the OPTIONS preflight. Hyperliquid parses the JSON body regardless.
-  return J(HL, {method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'text/plain;charset=UTF-8'}});
+  // Hyperliquid's /info endpoint requires application/json — it returns HTTP 415
+  // for other content types. This triggers a CORS preflight, which HL answers
+  // correctly on a normal https origin (only the in-app preview sandbox blocks it).
+  return J(HL, {method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'application/json'}});
 }
 
 /* ---------- ticker -> Hyperliquid coin resolution ----------
