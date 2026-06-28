@@ -1,0 +1,12 @@
+# Netlify headers for the Undercurrent PWA.
+# Place this file (named exactly "_headers", no extension) in the repo root,
+# alongside index.html. It guarantees correct content-types and keeps the
+# service worker from being cached, so redeploys always propagate.
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+  Cache-Control: public, max-age=0, must-revalidate
+
+/sw.js
+  Content-Type: text/javascript; charset=utf-8
+  Cache-Control: no-cache

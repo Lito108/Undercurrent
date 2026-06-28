@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Undercurrent — perp &amp; flow structure</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0A0C12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Undercurrent">
+<meta name="application-name" content="Undercurrent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0C12;
+    --ink2:#0d111a;
+    --panel:#12161F;
+    --panel2:#161B26;
+    --line:#232A39;
+    --line2:#2c3447;
+    --text:#E7EAF0;
+    --muted:#828B9E;
+    --muted2:#5d6678;
+    --aqua:#34E0C4;   /* accumulation / spot-led / fresh conviction pole */
+    --coral:#FF5C7A;  /* crowded leverage / perps-driving / reversal pole  */
+    --gold:#F4B63E;   /* mixed / caution */
+    --peri:#8E96FF;   /* structural accent, used sparingly */
+    --mono:"Space Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans:"IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--ink);color:var(--text);font-family:var(--sans)}
+  body{
+    background:
+      radial-gradient(900px 500px at 80% -10%, rgba(142,150,255,.06), transparent 60%),
+      radial-gradient(700px 460px at -5% 110%, rgba(52,224,196,.05), transparent 55%),
+      var(--ink);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:30px 20px 80px}
+
+  /* ---------- header ---------- */
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--muted2)}
+  .mark{display:flex;align-items:baseline;gap:12px;margin:8px 0 6px}
+  .mark h1{font-family:var(--mono);font-weight:700;font-size:30px;letter-spacing:.02em;margin:0;color:var(--text)}
+  .mark .dot{width:9px;height:9px;border-radius:50%;background:var(--aqua);box-shadow:0 0 14px var(--aqua);transform:translateY(-2px)}
+  .lede{color:var(--muted);font-size:14.5px;max-width:62ch;line-height:1.5;margin:0 0 22px}
+  .lede b{color:var(--text);font-weight:600}
+
+  /* ---------- input ---------- */
+  .console{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .field{position:relative;flex:1 1 240px;min-width:190px}
+  .field label{position:absolute;top:8px;left:14px;font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--muted2);text-transform:uppercase}
+  .field input{width:100%;background:var(--ink2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-family:var(--mono);font-weight:700;font-size:20px;letter-spacing:.06em;padding:24px 14px 9px;text-transform:uppercase;outline:none;transition:border-color .15s,box-shadow .15s}
+  .field input::placeholder{color:var(--muted2);font-weight:400}
+  .field input:focus{border-color:var(--aqua);box-shadow:0 0 0 3px rgba(52,224,196,.13)}
+  .seg{display:flex;background:var(--ink2);border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:stretch}
+  .seg button{background:transparent;border:0;color:var(--muted);font-family:var(--mono);font-size:13px;padding:0 13px;cursor:pointer;letter-spacing:.04em}
+  .seg button[aria-pressed="true"]{background:rgba(142,150,255,.14);color:var(--text)}
+  .seg button + button{border-left:1px solid var(--line)}
+  .run{background:var(--aqua);color:#04221c;border:0;border-radius:10px;font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:.05em;padding:0 22px;cursor:pointer;min-height:54px;transition:filter .15s,transform .05s}
+  .run:hover{filter:brightness(1.07)}
+  .run:active{transform:translateY(1px)}
+  .run:disabled{opacity:.5;cursor:wait}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 2px 0}
+  .chips span{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;color:var(--muted2);align-self:center;text-transform:uppercase}
+  .chip{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:999px;font-family:var(--mono);font-size:12.5px;padding:5px 12px;cursor:pointer;transition:all .15s}
+  .chip:hover{border-color:var(--line2);color:var(--text)}
+
+  /* ---------- status ---------- */
+  .status{margin:22px 2px 0;font-family:var(--mono);font-size:13px;color:var(--muted);display:none}
+  .status.show{display:block}
+  .status.err{color:var(--coral)}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line2);border-top-color:var(--aqua);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:8px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---------- results ---------- */
+  .results{margin-top:24px;display:none}
+  .results.show{display:block;animation:fade .4s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .rule{display:flex;align-items:center;gap:14px;margin:30px 0 16px}
+  .rule .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--muted2);white-space:nowrap}
+  .rule .ln{height:1px;background:var(--line);flex:1}
+
+  .head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .sym{font-family:var(--mono);font-weight:700;font-size:22px;letter-spacing:.04em}
+  .sym small{color:var(--muted2);font-weight:400;font-size:13px;letter-spacing:.18em;margin-left:8px}
+  .venues{display:flex;gap:7px;flex-wrap:wrap}
+  .venue{font-family:var(--mono);font-size:11px;letter-spacing:.08em;border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--muted)}
+  .venue b{color:var(--aqua);font-weight:700}
+  .venue.off{opacity:.45}
+
+  /* verdict card + gauge (the signature) */
+  .verdict{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:16px;padding:22px;position:relative;overflow:hidden}
+  .verdict::before{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:var(--vc,var(--gold));opacity:.85}
+  .vtop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .vcall{font-family:var(--mono);font-weight:700;font-size:21px;line-height:1.18;letter-spacing:.01em;color:var(--vc,var(--gold));max-width:20ch}
+  .vsub{color:var(--muted);font-size:13.5px;margin-top:7px;line-height:1.5;max-width:46ch}
+  .vsub b{color:var(--text);font-weight:600}
+  .vscore{text-align:right;font-family:var(--mono)}
+  .vscore .n{font-size:34px;font-weight:700;color:var(--vc,var(--gold));line-height:1}
+  .vscore .k{font-size:9.5px;letter-spacing:.22em;color:var(--muted2);text-transform:uppercase;margin-top:5px}
+
+  .gauge{margin:24px 0 4px}
+  .gtrack{position:relative;height:12px;border-radius:8px;background:
+      linear-gradient(90deg, rgba(52,224,196,.9), rgba(52,224,196,.35) 28%, rgba(244,182,62,.5) 50%, rgba(255,92,122,.35) 72%, rgba(255,92,122,.9));
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+  .gmid{position:absolute;top:-4px;bottom:-4px;left:50%;width:1px;background:rgba(255,255,255,.18)}
+  .gmark{position:absolute;top:50%;left:50%;width:20px;height:20px;border-radius:50%;background:var(--text);border:3px solid var(--ink);box-shadow:0 0 0 1.5px var(--vc,#fff),0 2px 10px rgba(0,0,0,.5);transform:translate(-50%,-50%);transition:left .7s cubic-bezier(.22,1,.36,1)}
+  .gends{display:flex;justify-content:space-between;margin-top:11px;font-family:var(--mono);font-size:11px;letter-spacing:.02em}
+  .gends .l{color:var(--aqua)}
+  .gends .r{color:var(--coral);text-align:right}
+  .gends small{display:block;color:var(--muted2);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;margin-top:2px}
+
+  .strength{display:flex;align-items:center;gap:12px;margin-top:20px}
+  .strength .k{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--muted2);text-transform:uppercase;white-space:nowrap}
+  .sbar{flex:1;height:6px;border-radius:4px;background:var(--ink2);overflow:hidden}
+  .sfill{height:100%;width:0;background:var(--vc,var(--gold));border-radius:4px;transition:width .8s cubic-bezier(.22,1,.36,1)}
+  .strength .v{font-family:var(--mono);font-size:12px;color:var(--text);min-width:34px;text-align:right}
+
+  /* signal grid */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px}
+  .cell{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px;position:relative}
+  .cell .ck{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  .cell .cv{font-family:var(--mono);font-weight:700;font-size:20px;margin:7px 0 2px;letter-spacing:.01em}
+  .cell .cd{font-size:12px;color:var(--muted);line-height:1.4;min-height:32px}
+  .pull{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;margin-top:9px;padding:3px 8px;border-radius:6px}
+  .pull.acc{color:var(--aqua);background:rgba(52,224,196,.10)}
+  .pull.crd{color:var(--coral);background:rgba(255,92,122,.10)}
+  .pull.neu{color:var(--muted);background:rgba(130,139,158,.10)}
+  .pull.na{color:var(--muted2);background:transparent;border:1px dashed var(--line)}
+
+  /* sparklines */
+  .sparks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .spark{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+  .spark .sk{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+  .spark .sk b{font-weight:700;letter-spacing:0}
+  .spark canvas{display:block;width:100%;height:46px;margin-top:8px}
+
+  /* collapsibles */
+  details{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:12px;overflow:hidden}
+  summary{list-style:none;cursor:pointer;padding:14px 16px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--text);display:flex;align-items:center;gap:10px}
+  summary::-webkit-details-marker{display:none}
+  summary .tri{color:var(--peri);transition:transform .2s}
+  details[open] summary .tri{transform:rotate(90deg)}
+  summary .tag{margin-left:auto;font-size:10px;letter-spacing:.1em;color:var(--muted2);text-transform:none}
+  .body{padding:0 16px 16px;color:var(--muted);font-size:13.5px;line-height:1.6}
+  .body p{margin:.5em 0}
+  .body code{font-family:var(--mono);font-size:12px;color:var(--peri);background:var(--ink2);padding:1px 5px;border-radius:4px}
+  .body b{color:var(--text)}
+
+  /* onchain panel */
+  .ocgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
+  .ocfield label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted2);margin:0 0 5px 2px}
+  .ocfield input,.ocfield select{width:100%;background:var(--ink2);border:1px solid var(--line);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:9px 11px;outline:none}
+  .ocfield input:focus,.ocfield select:focus{border-color:var(--peri)}
+  .ocfield.full{grid-column:1/-1}
+  .ocrun{margin-top:12px;background:transparent;border:1px solid var(--peri);color:var(--peri);border-radius:9px;font-family:var(--mono);font-size:13px;letter-spacing:.06em;padding:10px 18px;cursor:pointer}
+  .ocrun:hover{background:rgba(142,150,255,.1)}
+  .ocrun:disabled{opacity:.5;cursor:wait}
+  .ocout{margin-top:14px;font-family:var(--mono);font-size:13px;display:none}
+  .ocout.show{display:block}
+  .ocrow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)}
+  .ocrow:last-child{border-bottom:0}
+  .ocrow .v.in{color:var(--coral)} .ocrow .v.out{color:var(--aqua)}
+  .ocnote{margin-top:10px;color:var(--muted2);font-size:11.5px;line-height:1.5}
+
+  .foot{margin-top:34px;font-size:11.5px;color:var(--muted2);line-height:1.6;border-top:1px solid var(--line);padding-top:16px}
+  .foot b{color:var(--muted)}
+
+  @media (max-width:620px){
+    .grid,.sparks,.ocgrid{grid-template-columns:1fr 1fr}
+    .mark h1{font-size:25px}
+    .vcall{font-size:18px}
+    .run{flex:1 1 100%}
+  }
+  @media (max-width:430px){ .grid,.sparks{grid-template-columns:1fr} }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">perp structure · funding · open interest · flows</div>
+  <div class="mark"><span class="dot"></span><h1>UNDERCURRENT</h1></div>
+  <p class="lede">Type a ticker. It reads what's <b>under</b> the price — whether the move is <b>spot-led accumulation with fresh conviction</b>, or <b>crowded leverage where perps have taken the wheel</b> — and calls whether the prevailing trend holds or is set to flip.</p>
+
+  <div class="console">
+    <div class="field">
+      <label for="tk">ticker</label>
+      <input id="tk" placeholder="BTC" autocomplete="off" spellcheck="false" maxlength="14" />
+    </div>
+    <div class="seg" id="lb" role="group" aria-label="lookback window">
+      <button data-h="12" aria-pressed="false">12h</button>
+      <button data-h="24" aria-pressed="true">24h</button>
+      <button data-h="48" aria-pressed="false">48h</button>
+    </div>
+    <button class="run" id="go">READ</button>
+  </div>
+  <div class="chips">
+    <span>try</span>
+    <button class="chip" data-t="BTC">BTC</button>
+    <button class="chip" data-t="ETH">ETH</button>
+    <button class="chip" data-t="SOL">SOL</button>
+    <button class="chip" data-t="HYPE">HYPE</button>
+    <button class="chip" data-t="PUMP">PUMP</button>
+    <button class="chip" data-t="PEPE">PEPE</button>
+  </div>
+
+  <div class="status" id="st"></div>
+
+  <div class="results" id="res">
+    <div class="rule"><span class="lbl">read</span><span class="ln"></span></div>
+
+    <div class="head">
+      <div class="sym" id="symName">—</div>
+      <div class="venues" id="venues"></div>
+    </div>
+
+    <div class="verdict" id="vcard">
+      <div class="vtop">
+        <div>
+          <div class="vcall" id="vcall">—</div>
+          <div class="vsub" id="vsub">—</div>
+        </div>
+        <div class="vscore"><div class="n" id="vnum">0</div><div class="k">net read</div></div>
+      </div>
+
+      <div class="gauge">
+        <div class="gtrack"><div class="gmid"></div><div class="gmark" id="gmark"></div></div>
+        <div class="gends">
+          <div class="l" id="gL">accumulation<small>spot-led · fresh conviction</small></div>
+          <div class="r" id="gR">crowded leverage<small>perps driving · fragile</small></div>
+        </div>
+      </div>
+
+      <div class="strength">
+        <span class="k">conviction of signal</span>
+        <div class="sbar"><div class="sfill" id="sfill"></div></div>
+        <span class="v" id="sval">0</span>
+      </div>
+    </div>
+
+    <div class="rule"><span class="lbl">signals</span><span class="ln"></span></div>
+    <div class="grid" id="grid"></div>
+
+    <div class="rule"><span class="lbl">trajectory · <span id="trajh">24</span>h</span><span class="ln"></span></div>
+    <div class="sparks" id="sparks"></div>
+
+    <details id="ocPanel">
+      <summary><span class="tri">▸</span> on-chain flows <span class="tag" id="ocTag">optional · whale &amp; exchange netflow</span></summary>
+      <div class="body">
+        <p>Derivatives already tell you <b>how</b> price is being pushed. On-chain tells you <b>who</b>: tokens leaving exchanges = accumulation/holding; tokens hitting exchanges = supply for sale. Paste the token's contract to read net exchange flow over your window.</p>
+        <div class="ocgrid">
+          <div class="ocfield full"><label>token contract address</label><input id="ocAddr" placeholder="0x… (the asset's ERC-20 / chain contract)" spellcheck="false" autocomplete="off"></div>
+          <div class="ocfield"><label>chain</label>
+            <select id="ocChain">
+              <option value="1">Ethereum</option>
+              <option value="56">BNB Chain</option>
+              <option value="8453">Base</option>
+              <option value="42161">Arbitrum</option>
+              <option value="137">Polygon</option>
+              <option value="10">Optimism</option>
+              <option value="43114">Avalanche</option>
+            </select>
+          </div>
+          <div class="ocfield"><label>etherscan v2 api key</label><input id="ocKey" placeholder="free key — required for flow reads" spellcheck="false" autocomplete="off"></div>
+        </div>
+        <button class="ocrun" id="ocGo">read net flow</button>
+        <div class="ocout" id="ocOut"></div>
+        <p class="ocnote" id="ocNote"></p>
+      </div>
+    </details>
+
+    <details id="mPanel">
+      <summary><span class="tri">▸</span> how the read is built <span class="tag">methodology &amp; thresholds</span></summary>
+      <div class="body" id="method"></div>
+    </details>
+
+  </div>
+
+  <div class="foot">
+    <b>Structural read, not a prediction or financial advice.</b> Undercurrent describes the current state of positioning and flow from public market data — it does not forecast price and is not a recommendation to trade. Funding, premium, open interest and price come from the <b>Hyperliquid</b> public API; optional on-chain netflow from Etherscan. Markets can stay irrational, and crowded structure can get more crowded before it breaks. Size and verify on your own terms.
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   UNDERCURRENT — perp & flow structure analyzer
+   Zero dependencies. Data: Hyperliquid public info API (+ optional Etherscan).
+   ============================================================ */
+
+const $ = s => document.querySelector(s);
+const fmtPct = (x,d=2) => (x>=0?'+':'') + x.toFixed(d) + '%';
+const fmtF   = x => (x>=0?'+':'') + (x*100).toFixed(4) + '%';
+const ann    = f => f*3*365*100; // funding (per-8h-equivalent) -> annualized %
+const clamp  = (x,a,b)=>Math.max(a,Math.min(b,x));
+const fmtUsd = n => { if(n==null||!isFinite(n)) return '—';
+  const a=Math.abs(n), s=n<0?'-':'';
+  if(a>=1e9) return s+'$'+(a/1e9).toFixed(2)+'B';
+  if(a>=1e6) return s+'$'+(a/1e6).toFixed(1)+'M';
+  if(a>=1e3) return s+'$'+(a/1e3).toFixed(0)+'K';
+  return s+'$'+a.toFixed(0); };
+let LOOKBACK = 24;
+
+/* ---------- fetch helper with timeout ----------
+   Timeout via Promise.race rather than AbortController: sandboxed iframes (e.g.
+   the in-app preview) proxy fetch through postMessage, which structured-clones
+   the request options — and an AbortSignal can't be cloned. Racing a timer keeps
+   the same behaviour and works both in the sandbox and on a normal deploy. */
+async function J(url, opts={}){
+  const req = {...opts, headers:{'Accept':'application/json',...(opts.headers||{})}};
+  let timer;
+  const timeout = new Promise((_,rej)=>{ timer=setTimeout(()=>rej(new Error('request timed out')), 13000); });
+  try{
+    const r = await Promise.race([ fetch(url, req), timeout ]);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  } finally { clearTimeout(timer); }
+}
+
+/* ---------- Hyperliquid endpoint ---------- */
+const HL = 'https://api.hyperliquid.xyz/info';
+function hlPost(body){
+  // text/plain is a CORS-safelisted content type, so the request stays "simple"
+  // and skips the OPTIONS preflight. Hyperliquid parses the JSON body regardless.
+  return J(HL, {method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'text/plain;charset=UTF-8'}});
+}
+
+/* ---------- ticker -> Hyperliquid coin resolution ----------
+   HL names perps directly (BTC, ETH, HYPE, PUMP). Size-scaled memes carry a
+   lowercase "k" prefix meaning 1000x (kPEPE, kBONK, kSHIB). We resolve against
+   the live universe and return HL's exact casing. % metrics are unaffected by
+   the 1000x size scaling. */
+function resolveCoin(input, universe){
+  const norm = s => (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const raw  = norm(input);
+  const base = raw.replace(/^1000000/,'').replace(/^1000/,'').replace(/^K(?=[A-Z0-9])/,'');
+  const wants = [raw, base, 'K'+base];                 // compared in normalized space
+  for(const w of wants){
+    const u = universe.find(x => norm(x.name)===w);
+    if(u) return u.name;                                // preserve HL casing (e.g. kPEPE)
+  }
+  return null;
+}
+
+/* ---------- local OI sampler ----------
+   Hyperliquid exposes a live open-interest snapshot but no OI-history endpoint,
+   so we accrue the live reading per coin into localStorage and read it back as a
+   short series. Stored in COIN units (decoupled from price) so rate-of-change is
+   pure position growth. Fully optional: any storage failure degrades to
+   "current only" without breaking the read. Deduped to ~hourly, pruned at 3d. */
+function sampleOI(coin, oiCoins, nowMs){
+  const empty = {oi:[], oiTime:[]};
+  if(oiCoins==null || !isFinite(oiCoins)) return empty;
+  let store={};
+  try{ const raw=localStorage.getItem('uc_oi'); if(raw) store=JSON.parse(raw)||{}; }
+  catch(e){ store={}; }                                 // storage blocked -> this run only
+  let arr = Array.isArray(store[coin]) ? store[coin] : [];
+  const last = arr[arr.length-1];
+  if(!last || (nowMs - last[0]) > 18*60*1000) arr.push([nowMs, oiCoins]);
+  else arr[arr.length-1] = [nowMs, oiCoins];            // refresh within the same bucket
+  const keepAfter = nowMs - 3*24*3600*1000;
+  arr = arr.filter(p=>p[0]>=keepAfter);
+  store[coin]=arr;
+  try{ localStorage.setItem('uc_oi', JSON.stringify(store)); }catch(e){}
+  const winStart = nowMs - LOOKBACK*3600*1000;
+  const win = arr.filter(p=>p[0]>=winStart);
+  return { oi: win.map(p=>p[1]), oiTime: win.map(p=>p[0]) };
+}
+
+/* ---------- Hyperliquid fetch ---------- */
+async function getHyperliquid(input){
+  // (1) universe + live asset contexts in one call
+  let meta;
+  try{ meta = await hlPost({type:'metaAndAssetCtxs'}); }
+  catch(e){ throw new Error('Could not reach Hyperliquid ('+(e.message||'network error')+'). Check connectivity — a blocker or VPN may be interfering.'); }
+  const universe = (meta && meta[0] && meta[0].universe) || [];
+  const ctxs     = (meta && meta[1]) || [];
+  const coin = resolveCoin(input, universe);
+  if(!coin) return {notFound:true};
+  const idx = universe.findIndex(u=>u.name===coin);
+  const ctx = ctxs[idx] || {};
+
+  const out = {venue:'hyperliquid', symbol:coin};
+  out.mark  = ctx.markPx   !=null ? +ctx.markPx   : null;
+  out.index = ctx.oraclePx !=null ? +ctx.oraclePx : null;
+  // HL funding is per-HOUR; store per-8h-equivalent so bands/annualization match
+  out.fundingNow = ctx.funding!=null ? (+ctx.funding)*8 : null;
+  const oiCoins = ctx.openInterest!=null ? +ctx.openInterest : null;   // coin units
+
+  const now   = Date.now();
+  const start = now - (LOOKBACK+6)*3600*1000;
+  const keep  = LOOKBACK+1;                          // align series to the labeled window
+
+  // (2) hourly price candles + (3) hourly funding/premium history — parallel
+  const [candles, fhist] = await Promise.all([
+    hlPost({type:'candleSnapshot', req:{coin, interval:'1h', startTime:start, endTime:now}}).catch(()=>[]),
+    hlPost({type:'fundingHistory', coin, startTime:start, endTime:now}).catch(()=>[]),
+  ]);
+
+  const C = (Array.isArray(candles)?candles.slice():[]).sort((a,b)=>a.t-b.t);
+  out.price = C.map(c=>+c.c).slice(-keep);
+
+  const F = (Array.isArray(fhist)?fhist.slice():[]).sort((a,b)=>a.time-b.time);
+  out.funding  = F.map(x=>(+x.fundingRate)*8).slice(-keep);     // per-8h-equivalent series
+  out.premHist = F.map(x=>(+x.premium)*100).slice(-keep);        // perp premium %, chronological
+
+  // (4) OI: accrue/read the local sample series (coin units)
+  const s = sampleOI(coin, oiCoins, now);
+  out.oi = s.oi; out.oiTime = s.oiTime;
+  out.oiNow = (oiCoins!=null && out.mark!=null) ? oiCoins*out.mark : null; // USD notional (display)
+  out.oiSamples = s.oi.length;
+
+  // HL does not publish taker buy/sell flow or account long/short ratios
+  out.taker = []; out.ls = [];
+  return out;
+}
+
+/* ---------- band classifiers ---------- */
+function fundingBand(f){ const a=Math.abs(f);
+  if(a<=0.00015) return 'neutral'; if(a<=0.0004) return 'elevated'; if(a<=0.00085) return 'high'; return 'extreme'; }
+function premBand(p){ const a=Math.abs(p);
+  if(a<=0.03) return 'low'; if(a<=0.08) return 'moderate'; if(a<=0.15) return 'high'; return 'extreme'; }
+
+/* ---------- the engine ---------- */
+function analyze(m){
+  const S = {flags:[]};
+  const n = m.price.length;
+  // ---- price ----
+  S.priceChg = n>=2 ? (m.price[n-1]-m.price[0])/m.price[0]*100 : null;
+  S.priceLast = m.price[n-1];
+  const pUp = S.priceChg!=null && S.priceChg>0.5, pDn = S.priceChg!=null && S.priceChg<-0.5;
+  S.trend = pUp?'up':pDn?'down':'flat';
+  // ensure OI is chronological (oldest -> newest)
+  if(m.oiTime && m.oiTime.length===m.oi.length && m.oi.length>1){
+    const idx=m.oiTime.map((_,i)=>i).sort((a,b)=>m.oiTime[a]-m.oiTime[b]);
+    m.oi=idx.map(i=>m.oi[i]); m.oiTime=idx.map(i=>m.oiTime[i]);
+  }
+  // ---- OI (Hyperliquid: locally sampled; only scored once the series matures) ----
+  const on = m.oi.length;
+  let oiSpanH = 0;
+  if(on>=2 && m.oiTime && m.oiTime.length===on) oiSpanH = (m.oiTime[on-1]-m.oiTime[0])/3600000;
+  const oiMature = on>=4 && oiSpanH >= Math.max(3, LOOKBACK*0.5);
+  if(oiMature && m.oi[0]>0){
+    S.oiChg = (m.oi[on-1]-m.oi[0])/m.oi[0]*100;
+    const half = Math.floor(on/2);
+    const rEarly = m.oi[half]>0 ? (m.oi[half]-m.oi[0])/m.oi[0]*100 : 0;
+    const rLate  = m.oi[half]>0 ? (m.oi[on-1]-m.oi[half])/m.oi[half]*100 : 0;
+    S.oiAccel = rLate - rEarly;          // >0 => OI rate-of-change rising
+    S.oiHas = true;
+  } else S.oiHas=false;
+  S.oiN = on; S.oiSpanH = oiSpanH; S.oiNow = m.oiNow;
+  const oiUp = S.oiHas && S.oiChg>2, oiDn = S.oiHas && S.oiChg<-2;
+  // ---- funding ----
+  S.fNow = m.fundingNow!=null ? m.fundingNow : (m.funding.length?m.funding[m.funding.length-1]:null);
+  if(m.funding.length>=2){
+    S.fStart = m.funding[0];
+    S.fTrend = S.fNow - S.fStart;
+    S.fFlip = (Math.sign(S.fStart)!==Math.sign(S.fNow) && S.fNow!==0) ? Math.sign(S.fNow) : 0;
+    S.fHas=true;
+  } else { S.fFlip=0; S.fHas=false; }
+  S.fBand = S.fNow!=null ? fundingBand(S.fNow) : 'n/a';
+  // ---- perp premium ----
+  S.prem = (m.mark&&m.index) ? (m.mark-m.index)/m.index*100 : null;
+  S.pBand = S.prem!=null ? premBand(S.prem) : 'n/a';
+  // ---- perp premium trend (HL serves hourly premium history) ----
+  if(m.premHist && m.premHist.length>=2){
+    S.premStart=m.premHist[0]; S.premNow=m.premHist[m.premHist.length-1];
+    S.premTrend=S.premNow - S.premStart;
+  } else S.premTrend=null;
+  // ---- taker / positioning ----
+  S.takerNow = m.taker.length?m.taker[m.taker.length-1]:null;
+  S.takerAvg = m.taker.length?m.taker.reduce((a,b)=>a+b,0)/m.taker.length:null;
+  S.lsNow = m.ls.length?m.ls[m.ls.length-1]:null;
+  S.lsTrend = m.ls.length>=2 ? m.ls[m.ls.length-1]-m.ls[0] : null;
+
+  /* ====== continuation vs reversal evidence ======
+     cont = trend persists, rev = trend flips. Both >= 0. */
+  let cont=0, rev=0;
+  const fPos = S.fNow>0, fNeg = S.fNow<0;
+  const crowdedLong  = S.lsNow!=null && S.lsNow>2.2;
+  const crowdedShort = S.lsNow!=null && S.lsNow<0.85;
+
+  if(S.trend==='up'){
+    if(oiUp){
+      if(S.fBand==='neutral'||S.fBand==='elevated'){ cont+=34; S.flags.push(['oi','New money entering on contained funding — spot is leading.']); }
+      if(S.fBand==='high'){ rev+=26; S.flags.push(['oi','OI building while funding runs hot — leverage is doing the lifting.']); }
+      if(S.fBand==='extreme'){ rev+=42; S.flags.push(['oi','OI piling in at extreme funding — textbook crowded longs.']); }
+      if(S.oiAccel>0 && (S.fBand==='high'||S.fBand==='extreme')){ rev+=14; }
+      if(S.oiAccel>0 && (S.fBand==='neutral'||S.fBand==='elevated')){ cont+=10; }
+    }
+    if(oiDn){ rev+=22; S.flags.push(['oi','Price up on falling OI — short-covering, not fresh demand.']); }
+    if(S.fFlip>0 && S.fBand!=='extreme'){ cont+=14; S.flags.push(['fund','Funding flipped positive off a negative base — trapped shorts feeding the move.']); }
+    if(S.prem!=null){ if(S.pBand==='low'||S.pBand==='moderate') cont+=8; if(S.pBand==='high') rev+=10; if(S.pBand==='extreme') rev+=18; }
+    if(fPos && (S.fBand==='high'||S.fBand==='extreme')) rev+=10;
+    if(S.takerAvg!=null){ if(S.takerAvg>1.08 && (S.fBand==='neutral'||S.fBand==='elevated')) cont+=10; if(S.takerAvg>1.25 && (S.fBand==='high'||S.fBand==='extreme')) rev+=8; }
+    if(crowdedLong){ rev+=14; S.flags.push(['pos','Account positioning skewed heavily long — crowded side.']); }
+    if(S.lsTrend!=null && S.lsTrend>0.4) rev+=6;
+  }
+  else if(S.trend==='down'){
+    if(oiUp){
+      if(S.fBand==='neutral'||S.fBand==='elevated'){ cont+=30; S.flags.push(['oi','Fresh shorts pressing into weakness — sellers in control.']); }
+      if((fNeg&&(S.fBand==='high'||S.fBand==='extreme'))||crowdedShort){ rev+=34; S.flags.push(['oi','Heavy crowded shorts at stretched funding — squeeze fuel building.']); }
+    }
+    if(oiDn){ rev+=18; S.flags.push(['oi','Down move on shrinking OI — looks like a flush/deleverage, not trend.']); }
+    if(S.fFlip<0 && S.fBand!=='extreme'){ rev+=8; }
+    if(crowdedShort){ rev+=14; }
+    if(fNeg && S.fBand==='extreme'){ rev+=12; }
+    if(S.prem!=null && S.pBand==='extreme' && S.prem<0) rev+=10;
+  }
+  else {
+    if(S.fBand==='extreme'){ rev+=16; S.flags.push(['fund','Flat price but extreme funding — leverage stacked into a coil.']); }
+    if(oiUp) S.flags.push(['oi','OI rising into a range — a break is being loaded.']);
+    cont+=6;
+  }
+
+  // ---- on-chain overlay (set later if a flow read exists) ----
+  if(m.onchain){
+    const nf = m.onchain.netPct; // negative = outflow (bullish), positive = inflow (bearish)
+    if(S.trend==='up'){ if(nf< -1) cont+=18; if(nf>1) rev+=18; }
+    else if(S.trend==='down'){ if(nf< -1) rev+=18; if(nf>1) cont+=14; }
+    else { if(nf< -1) cont+=8; if(nf>1) rev+=8; }
+  }
+
+  // ---- net read & verdict ----
+  const tot = cont+rev;
+  S.score = tot>0 ? Math.round((cont-rev)/tot*100) : 0;
+  S.strength = Math.round(clamp((Math.abs(cont-rev)*1.4 + tot*0.25), 0, 100));
+  S.cont=cont; S.rev=rev;
+
+  // verdict text
+  const lean = S.score> 18 ? 'cont' : S.score< -18 ? 'rev' : 'mix';
+  S.lean = lean;
+  const V = (call,sub,regime,conv,color)=>{S.call=call;S.sub=sub;S.regime=regime;S.conv=conv;S.color=color;};
+  if(S.trend==='up'){
+    if(lean==='cont') V('UPTREND LIKELY TO CONTINUE','Move is <b>spot-led</b>: new positions without a funding blowout. Reads as accumulation with fresh conviction.','spot-led accumulation','fresh conviction · broadening','var(--aqua)');
+    else if(lean==='rev') V('UPTREND LOOKS EXHAUSTED','<b>Perps have taken the wheel</b> — price is being rented with leverage at stretched funding. Vulnerable to a long flush.','crowded leverage','rented · fragile','var(--coral)');
+    else V('UPTREND — MIXED, NO EDGE','Cross-currents: some real demand, some crowding. Not a clean structural call either way.','two-sided','undecided','var(--gold)');
+  } else if(S.trend==='down'){
+    if(lean==='cont') V('DOWNTREND LIKELY TO CONTINUE','Sellers in control — fresh shorts pressing on contained funding, no squeeze pressure yet.','shorts pressing','seller-led','var(--coral)');
+    else if(lean==='rev') V('DOWNTREND MAY BE TURNING','Crowded shorts at stretched funding and/or a deleveraging flush — the setup for a squeeze higher.','crowded shorts / flush','squeeze risk','var(--aqua)');
+    else V('DOWNTREND — MIXED, NO EDGE','No decisive positioning tilt. Trend intact but without strong structural confirmation.','two-sided','undecided','var(--gold)');
+  } else {
+    if(lean==='rev') V('COILED — BREAK RISK BUILDING','Flat price masking stacked leverage. Whichever way it breaks tends to be violent.','leveraged coil','loaded','var(--gold)');
+    else V('RANGING — NO TREND TO READ','Price and positioning both balanced. Nothing structurally pressing yet.','balanced','quiet','var(--gold)');
+  }
+
+  /* ====== gauge polarity: spot-led(-1) <-> perp-led/crowded(+1) ====== */
+  let perpLed=0, spotLed=0.6;
+  if(S.fNow!=null){ const fe=clamp(Math.abs(ann(S.fNow))/90,0,1); perpLed += fe*1.4; if(S.fBand==='neutral') spotLed+=0.9; if(S.fBand==='elevated') spotLed+=0.3; }
+  if(S.prem!=null){ perpLed += clamp(Math.abs(S.prem)/0.15,0,1)*0.8; if(S.pBand==='low') spotLed+=0.4; }
+  if(S.oiHas && (oiUp||oiDn)){
+    const lev = Math.abs(S.oiChg)/Math.max(Math.abs(S.priceChg||0.5),0.5);
+    perpLed += clamp(lev/4,0,1)*0.9;
+    if(lev<1.5) spotLed+=0.5;
+  }
+  if(crowdedLong||crowdedShort) perpLed += 0.7;
+  if(S.takerAvg!=null && S.takerAvg>1.08 && (S.fBand==='neutral'||S.fBand==='elevated')) spotLed+=0.5;
+  if(m.onchain){ if(m.onchain.netPct<-1) spotLed+=0.8; if(m.onchain.netPct>1) perpLed+=0.8; }
+  S.polarity = clamp((perpLed - spotLed)/(perpLed + spotLed + 0.8), -1, 1);
+
+  return S;
+}
+
+/* ---------- rendering ---------- */
+function pull(kind,txt){ const m={acc:'◆ accumulation',crd:'◆ crowded',neu:'◆ neutral',na:'— n/a'}; return `<span class="pull ${kind}">${m[kind]} ${txt||''}</span>`; }
+
+function cellPull(S){
+  // helper to decide each cell's pull tag
+}
+
+function render(name, venues, S){
+  $('#symName').innerHTML = name + ' <small>PERP</small>';
+  $('#venues').innerHTML = venues;
+
+  // verdict
+  const vc = $('#vcard'); vc.style.setProperty('--vc', S.color);
+  $('#vcall').textContent = S.call;
+  $('#vsub').innerHTML = S.sub;
+  $('#vnum').textContent = (S.score>0?'+':'')+S.score;
+  // gauge
+  requestAnimationFrame(()=>{ $('#gmark').style.left = ((S.polarity+1)/2*100).toFixed(1)+'%'; });
+  $('#sfill').style.width = S.strength+'%';
+  $('#sval').textContent = S.strength;
+  // gauge labels adapt to trend
+  if(S.trend==='down'){
+    $('#gL').innerHTML = 'orderly selling<small>seller-led · distribution</small>';
+    $('#gR').innerHTML = 'crowded shorts<small>squeeze fuel · fragile</small>';
+  } else {
+    $('#gL').innerHTML = 'accumulation<small>spot-led · fresh conviction</small>';
+    $('#gR').innerHTML = 'crowded leverage<small>perps driving · fragile</small>';
+  }
+
+  // signal cells
+  const cells=[];
+  // funding — HL is hourly; headline annualized, native hourly in the subline
+  {
+    let p='neu',d='';
+    if(S.fNow!=null){
+      const band=S.fBand;
+      if(band==='neutral') {p='acc';d='At baseline — perps not stretched.';}
+      else if(band==='elevated'){p= S.fNow>0?'acc':'neu'; d=(S.fNow>0?'Longs paying a fair premium.':'Shorts paying mildly.');}
+      else if(band==='high'){p='crd'; d=(S.fNow>0?'Longs paying up — getting crowded.':'Shorts paying up — squeeze-prone.');}
+      else {p='crd'; d=(S.fNow>0?'Extreme long crowding.':'Extreme short crowding.');}
+      if(S.fFlip>0) d='Flipped positive — '+d.charAt(0).toLowerCase()+d.slice(1);
+      if(S.fFlip<0) d='Flipped negative — '+d.charAt(0).toLowerCase()+d.slice(1);
+    }
+    const hr = S.fNow!=null ? S.fNow/8 : null;   // back out HL native hourly
+    cells.push(['funding · ann', S.fNow!=null?(ann(S.fNow)>=0?'+':'')+ann(S.fNow).toFixed(0)+'%':'n/a',
+      (S.fNow!=null?`hourly ${(hr>=0?'+':'')}${(hr*100).toFixed(4)}% · ${S.fBand}`:'')+(d?'<br>'+d:''), S.fNow!=null?p:'na']);
+  }
+  // open interest — HL live snapshot; history is locally sampled and matures over time
+  {
+    let p='na', d='', val, sub;
+    if(S.oiHas){
+      const acc = S.oiAccel>0;
+      if(S.trend==='up'){ p = (S.fBand==='neutral'||S.fBand==='elevated')&&S.oiChg>0 ? 'acc' : (S.oiChg>0?'crd':'neu'); }
+      else if(S.trend==='down'){ p = S.oiChg>0?'crd':'neu'; }
+      else p='neu';
+      d = (S.oiChg>0?'Rising':'Falling')+(acc?', accelerating':', decelerating')+' over window.';
+      val = fmtPct(S.oiChg,1);
+      sub = 'accel '+(S.oiAccel>=0?'+':'')+S.oiAccel.toFixed(1)+'pp';
+    } else {
+      val = fmtUsd(S.oiNow);
+      sub = 'live notional';
+      const need = Math.max(3, Math.round(LOOKBACK*0.5));
+      d = (S.oiN>1)
+        ? 'Sampling — '+S.oiN+' pts over '+S.oiSpanH.toFixed(1)+'h; Δ unlocks at ≥'+need+'h.'
+        : 'Live OI; the history series builds as you re-run this coin.';
+      p='na';
+    }
+    cells.push(['open interest', val, sub+(d?'<br>'+d:''), p]);
+  }
+  // perp premium
+  {
+    let p='neu',d='';
+    if(S.prem!=null){
+      if(S.pBand==='low'){p='acc';d='Perp tracking spot — no lead.';}
+      else if(S.pBand==='moderate'){p='neu';d='Mild perp premium.';}
+      else {p='crd';d=(S.prem>0?'Perps bid over spot — leading the move.':'Perps under spot.');}
+    }
+    cells.push(['perp premium', S.prem!=null?fmtPct(S.prem,3):'n/a',
+      (S.prem!=null?('mark vs index · '+S.pBand):'')+(d?'<br>'+d:''), S.prem!=null?p:'na']);
+  }
+  // price
+  cells.push(['price · '+LOOKBACK+'h', S.priceChg!=null?fmtPct(S.priceChg,2):'n/a',
+    'Prevailing trend: <b>'+S.trend.toUpperCase()+'</b>', S.trend==='up'?'acc':S.trend==='down'?'crd':'neu']);
+  // funding Δ over window — replaces taker flow (not exposed by HL)
+  {
+    let p='neu',d='';
+    if(S.fHas && S.fTrend!=null){
+      const rising=S.fTrend>0;
+      if(S.fFlip>0){ p='crd'; d='Flipped positive — longs began paying.'; }
+      else if(S.fFlip<0){ p='neu'; d='Flipped negative — shorts began paying.'; }
+      else if(Math.abs(ann(S.fTrend))<8){ p='neu'; d='Funding pressure roughly steady.'; }
+      else if(rising){ p=S.fNow>0?'crd':'neu'; d=S.fNow>0?'Long-side funding building.':'Short funding easing toward zero.'; }
+      else { p=S.fNow>0?'neu':'crd'; d=S.fNow>0?'Long funding bleeding off.':'Short-side funding building.'; }
+    }
+    cells.push(['funding Δ · '+LOOKBACK+'h', (S.fHas&&S.fTrend!=null)?((ann(S.fTrend)>=0?'+':'')+ann(S.fTrend).toFixed(0)+'%'):'n/a',
+      'change in annualized funding'+(d?'<br>'+d:''), (S.fHas&&S.fTrend!=null)?p:'na']);
+  }
+  // perp-premium Δ over window — replaces account ratio (not exposed by HL)
+  {
+    let p='neu',d='';
+    if(S.premTrend!=null){
+      if(S.premTrend>0.02){ p='crd'; d='Premium expanding — perps pressing over spot.'; }
+      else if(S.premTrend<-0.02){ p='acc'; d='Premium compressing — perps converging to spot.'; }
+      else { p='neu'; d='Basis roughly flat vs spot.'; }
+    }
+    cells.push(['premium Δ · '+LOOKBACK+'h', S.premTrend!=null?fmtPct(S.premTrend,3):'n/a',
+      'change in mark-vs-oracle basis'+(d?'<br>'+d:''), S.premTrend!=null?p:'na']);
+  }
+
+  $('#grid').innerHTML = cells.map(c=>`
+    <div class="cell">
+      <div class="ck">${c[0]}</div>
+      <div class="cv">${c[1]}</div>
+      <div class="cd">${c[2]}</div>
+      ${pullTag(c[3])}
+    </div>`).join('');
+
+  // sparklines
+  $('#trajh').textContent = LOOKBACK;
+  const sp=[];
+  sp.push(['price', S.priceChg!=null?fmtPct(S.priceChg,1):'—', window._m.price, S.trend==='down'?'--coral':'--aqua']);
+  sp.push(['open interest', S.oiHas?fmtPct(S.oiChg,1):'—', window._m.oi, '--peri']);
+  sp.push(['funding', S.fNow!=null?(ann(S.fNow).toFixed(0)+'%'):'—', window._m.funding, '--gold']);
+  $('#sparks').innerHTML = sp.map((s,i)=>`
+    <div class="spark"><div class="sk">${s[0]} <b>${s[1]}</b></div><canvas id="sk${i}"></canvas></div>`).join('');
+  sp.forEach((s,i)=>drawSpark('sk'+i, s[2], getCss(s[3])));
+
+  // methodology
+  $('#method').innerHTML = methodologyHTML(S);
+  $('#res').classList.add('show');
+}
+function pullTag(k){
+  const m={acc:['acc','accumulation'],crd:['crd','crowded'],neu:['neu','neutral'],na:['na','no data']};
+  const x=m[k]||m.neu; return `<span class="pull ${x[0]}">${k==='na'?'—':'◆'} ${x[1]}</span>`;
+}
+function getCss(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#888'; }
+
+function drawSpark(id, series, color){
+  const cv=document.getElementById(id); if(!cv||!series||series.length<2){ if(cv){const c=cv.getContext('2d');} return; }
+  const dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=cv.clientHeight;
+  cv.width=w*dpr; cv.height=h*dpr; const x=cv.getContext('2d'); x.scale(dpr,dpr);
+  const mn=Math.min(...series), mx=Math.max(...series), rng=(mx-mn)||1, pad=4;
+  const X=i=>i/(series.length-1)*(w-pad*2)+pad, Y=v=>h-pad-((v-mn)/rng)*(h-pad*2);
+  // area
+  x.beginPath(); x.moveTo(X(0),h);
+  series.forEach((v,i)=>x.lineTo(X(i),Y(v))); x.lineTo(X(series.length-1),h); x.closePath();
+  const g=x.createLinearGradient(0,0,0,h); g.addColorStop(0,color+'33'); g.addColorStop(1,color+'00');
+  x.fillStyle=g; x.fill();
+  // line
+  x.beginPath(); series.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));
+  x.strokeStyle=color; x.lineWidth=1.6; x.lineJoin='round'; x.stroke();
+  // last dot
+  x.beginPath(); x.arc(X(series.length-1),Y(series[series.length-1]),2.4,0,7); x.fillStyle=color; x.fill();
+}
+
+function methodologyHTML(S){
+  return `
+  <p>Undercurrent runs a transparent, rule-based read over your <b>${LOOKBACK}h</b> window — no black box, no ML. Every input is <b>Hyperliquid</b>'s own data. Each signal pulls toward one of two poles, and the net decides the verdict.</p>
+  <p><b>The core cross-signal.</b> Price↑ with OI↑ is ambiguous on its own. It's <span style="color:var(--aqua)">accumulation</span> when funding stays near baseline and the perp premium is low (spot is leading, new money isn't overpaying). It's <span style="color:var(--coral)">crowded leverage</span> when funding runs hot and perps trade over the oracle (the move is being rented, not bought). Price↑ on OI↓ is short-covering, not fresh demand; Price↓ on OI↑ with deeply negative funding is squeeze fuel.</p>
+  <p><b>Funding.</b> HL funds <i>hourly</i>; the cell headlines the <b>annualized</b> rate with the native hourly figure beneath. Bands (per-8h-equivalent): neutral ≤0.015%, elevated ≤0.04%, high ≤0.085%, extreme above. A <b>flip</b> is funding crossing zero across the window; <b>funding Δ</b> is the change in annualized funding. <b>Perp premium</b> = (mark−oracle)/oracle, with <b>premium Δ</b> tracking whether perps are pressing over spot or converging back.</p>
+  <p><b>Open interest.</b> Hyperliquid exposes a live OI snapshot but <b>no OI-history endpoint</b>, so the tool samples the live reading locally (in your browser) and builds the series as you re-run a coin. OI only enters the score once the series spans ≥${Math.max(3, Math.round(LOOKBACK*0.5))}h with ≥4 points; until then the cell shows live notional and the verdict leans on funding, premium and price. <b>Acceleration</b> compares the 2nd half of the window's OI rate-of-change against the 1st (pp = percentage points).</p>
+  <p><b>Not available from HL:</b> taker buy/sell flow and account long/short ratios aren't published, so those slots carry funding-Δ and premium-Δ instead — both read directly from HL's funding history.</p>
+  <p><b>On-chain</b> (optional) reads net token flow to/from major exchange wallets via Etherscan: outflow = accumulation/holding (bullish overlay), inflow = supply moving to sell (bearish overlay). It nudges the verdict and gauge but never overrides the derivatives core.</p>
+  <p style="color:var(--muted2)"><b>Data:</b> Hyperliquid public info API. When a field reads <code>n/a</code> it was unavailable and was left out of the score (which lowers conviction rather than guessing).</p>`;
+}
+
+/* ---------- on-chain: exchange netflow via Etherscan v2 ---------- */
+const CEX = { // public, well-known hot wallets (Ethereum mainnet). Edit as they rotate.
+  1:[
+    ['Binance','0x28C6c06298d514Db089934071355E5743bf21d60'],
+    ['Binance','0x21a31Ee1afC51d94C2eFcCAa2092aD1028285549'],
+    ['Binance','0xDFd5293D8e347dFe59E90eFd55b2956a1343963d'],
+    ['Coinbase','0x71660c4005BA85c37ccec55d0C4493E66Fe775d3'],
+    ['Coinbase','0x503828976D22510aad0201ac7EC88293211D23Da'],
+    ['OKX','0x6cC5F688a315f3dC28A7781717a9A798a59fDA7b'],
+    ['OKX','0x98EC059Dc3aDFBdd63429454aEB0c990FBA4A128'],
+    ['Kraken','0x267be1C1D684F78cb4F6a176C4911b741E4Ffdc0'],
+    ['Bybit','0xf89d7b9c864f589bbF53a82105107622B35EaA40'],
+    ['Bitfinex','0x876EabF441B2EE5B5b0554Fd502a8E0600950cFa'],
+  ]
+};
+async function readNetflow(addr, chain, key){
+  const wallets = CEX[chain];
+  if(!wallets) throw new Error('No exchange wallet set bundled for this chain yet — add hot wallets in the CEX map, or read this chain in your own RPC script.');
+  const since = Date.now()/1000 - LOOKBACK*3600;
+  let inn=0, out=0, dec=null, txc=0; const byEx={};
+  const base = 'https://api.etherscan.io/v2/api?chainid='+chain+'&module=account&action=tokentx&contractaddress='+addr+'&page=1&offset=200&sort=desc&apikey='+key;
+  for(const [name,w] of wallets){
+    let d; try{ d = await J(base+'&address='+w); }catch(e){ continue; }
+    if(d.status!=='1' || !Array.isArray(d.result)) continue;
+    for(const t of d.result){
+      if(+t.timeStamp < since) break;
+      if(dec===null) dec = +t.tokenDecimal;
+      const v = Number(t.value)/Math.pow(10, dec||18);
+      const toEx = t.to.toLowerCase()===w.toLowerCase();
+      const frEx = t.from.toLowerCase()===w.toLowerCase();
+      if(toEx){ inn+=v; byEx[name]=(byEx[name]||0)+v; txc++; }
+      if(frEx){ out+=v; byEx[name]=(byEx[name]||0)-v; txc++; }
+    }
+    await new Promise(r=>setTimeout(r,220)); // be gentle on rate limit
+  }
+  const net = inn-out;                 // +inflow / -outflow
+  const gross = inn+out || 1;
+  return {inn,out,net,netPct: net/gross*100, byEx, txc};
+}
+
+/* ---------- orchestration ---------- */
+async function run(ticker){
+  ticker=(ticker||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!ticker) return;
+  const st=$('#st'); st.className='status show'; st.innerHTML='<span class="spin"></span>resolving '+ticker+' on Hyperliquid…';
+  $('#res').classList.remove('show');
+  $('#go').disabled=true; $('#ocOut').classList.remove('show'); $('#ocNote').textContent='';
+  try{
+    st.innerHTML='<span class="spin"></span>pulling funding · premium · open interest · price…';
+    const m = await getHyperliquid(ticker);
+    if(m.notFound){
+      throw new Error('“'+ticker+'” isn’t a Hyperliquid perp. Try the base ticker — HL lists 1000× memes k-prefixed (PEPE→kPEPE), which this resolves automatically.');
+    }
+    if(!m.price || m.price.length<2){
+      throw new Error('Couldn’t retrieve price history for '+m.symbol+' from Hyperliquid — try again in a moment.');
+    }
+    window._m=m; window._ticker=ticker; window._oc=null;
+    const S = analyze(m);
+
+    // venue badges
+    const vb=[];
+    vb.push('<span class="venue"><b>hyperliquid</b> '+m.symbol+'</span>');
+    vb.push('<span class="venue '+(S.oiHas?'':'off')+'">oi '+(S.oiHas?'Δ live':'sampling '+(m.oiSamples||0)+'pt')+'</span>');
+    vb.push('<span class="venue off">no taker / acct-ratio on HL</span>');
+
+    render(m.symbol, vb.join(''), S);
+    window._S=S;
+    st.className='status';
+  }catch(e){
+    st.className='status show err'; st.textContent='⚠ '+e.message;
+    $('#res').classList.remove('show');
+  } finally { $('#go').disabled=false; }
+}
+
+/* re-score with on-chain overlay merged in */
+function rescoreWithOnchain(oc){
+  const m=window._m; m.onchain=oc;
+  const S=analyze(m); window._S=S;
+  render((window._m&&window._m.symbol)||window._ticker, $('#venues').innerHTML, S);
+}
+
+/* ---------- wiring ---------- */
+$('#go').addEventListener('click', ()=>run($('#tk').value));
+$('#tk').addEventListener('keydown', e=>{ if(e.key==='Enter') run($('#tk').value); });
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{ $('#tk').value=c.dataset.t; run(c.dataset.t); }));
+document.querySelectorAll('#lb button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#lb button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true'); LOOKBACK=+b.dataset.h;
+  if(window._ticker) run(window._ticker);
+}));
+
+$('#ocGo').addEventListener('click', async ()=>{
+  const addr=$('#ocAddr').value.trim(), chain=+$('#ocChain').value, key=$('#ocKey').value.trim();
+  const out=$('#ocOut'), note=$('#ocNote');
+  if(!window._m){ note.textContent='Run a ticker read first, then add on-chain flow.'; return; }
+  if(!/^0x[0-9a-fA-F]{40}$/.test(addr)){ note.textContent='Enter a valid 0x… token contract address.'; return; }
+  if(!key){ note.textContent='An Etherscan API key is required (free at etherscan.io/apis).'; return; }
+  $('#ocGo').disabled=true; note.textContent='Reading exchange netflow…'; out.classList.remove('show');
+  try{
+    const oc=await readNetflow(addr,chain,key);
+    const dir = oc.net<0?'out':'in';
+    const rows = Object.entries(oc.byEx).filter(([,v])=>Math.abs(v)>0).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))
+      .map(([k,v])=>`<div class="ocrow"><span>${k}</span><span class="v ${v<0?'out':'in'}">${v<0?'▼ out ':'▲ in '}${Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>`).join('');
+    out.innerHTML = `
+      <div class="ocrow"><span><b>Net exchange flow</b></span><span class="v ${dir}">${oc.net<0?'▼ NET OUTFLOW':'▲ NET INFLOW'} · ${Math.abs(oc.netPct).toFixed(1)}% of gross</span></div>
+      ${rows||'<div class="ocrow"><span>No large transfers to/from tracked wallets in window.</span><span></span></div>'}`;
+    out.classList.add('show');
+    note.innerHTML = (oc.net<0
+      ? '<b style="color:var(--aqua)">Outflow</b> — tokens leaving exchanges over your window: consistent with accumulation/holding. Folded into the read as a bullish overlay.'
+      : '<b style="color:var(--coral)">Inflow</b> — tokens moving onto exchanges: supply positioning to sell. Folded in as a bearish overlay.')
+      + ' New-whale vs top-up clustering isn’t resolved here — netflow + concentration only hint at it; confirm fresh addresses in your own RPC scripts.';
+    rescoreWithOnchain({netPct:oc.netPct, net:oc.net});
+    $('#ocTag').textContent = (oc.net<0?'net outflow':'net inflow')+' · folded in';
+  }catch(e){
+    note.textContent='⚠ '+e.message;
+  } finally { $('#ocGo').disabled=false; }
+});
+
+// focus input on load
+window.addEventListener('load',()=>$('#tk').focus());
+
+/* ---------- PWA: register service worker (offline shell + installability) ----------
+   Wrapped so it never breaks the app where SW is unsupported or blocked
+   (e.g. the in-app preview sandbox). Real registration happens on a normal
+   https origin such as your Netlify deploy. */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
