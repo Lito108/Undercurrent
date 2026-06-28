@@ -431,6 +431,32 @@ function fundingBand(f){ const a=Math.abs(f);
 function premBand(p){ const a=Math.abs(p);
   if(a<=0.03) return 'low'; if(a<=0.08) return 'moderate'; if(a<=0.15) return 'high'; return 'extreme'; }
 
+/* ---------- driver-aware phrasing for the verdict sub-text ----------
+   Names the signals that actually fired (funding vs premium vs OI crowding)
+   instead of asserting a fixed driver. Scoring is unchanged; this only
+   describes the read. */
+function joinAnd(b){
+  if(!b.length) return '';
+  if(b.length===1) return b[0];
+  if(b.length===2) return b[0]+' and '+b[1];
+  return b.slice(0,-1).join(', ')+', and '+b[b.length-1];
+}
+function longDrivers(S){            // what's overheated on the crowded-long side
+  const b=[], fHot=(S.fBand==='high'||S.fBand==='extreme');
+  if(S.fNow>0 && fHot) b.push('longs are paying up at '+S.fBand+' funding');
+  if(S.prem>0 && (S.pBand==='high'||S.pBand==='extreme'))
+    b.push('the book is bid '+(S.pBand==='extreme'?'well ':'')+'over spot at '+(S.pBand==='extreme'?'an extreme':'a high')+' premium');
+  if(S.oiHas && S.oiChg>2 && fHot) b.push('open interest is still piling in');
+  return b;
+}
+function shortDrivers(S){           // what's overheated on the crowded-short side
+  const b=[], fHot=(S.fBand==='high'||S.fBand==='extreme');
+  if(S.fNow<0 && fHot) b.push('shorts are paying up at '+S.fBand+' funding');
+  if(S.prem<0 && (S.pBand==='high'||S.pBand==='extreme')) b.push('the perp is trading under spot');
+  if(S.oiHas && S.oiChg>2 && fHot) b.push('short open interest is still building');
+  return b;
+}
+
 /* ---------- the engine ---------- */
 function analyze(m){
   const S = {flags:[]};
@@ -548,15 +574,47 @@ function analyze(m){
   S.lean = lean;
   const V = (call,sub,regime,conv,color)=>{S.call=call;S.sub=sub;S.regime=regime;S.conv=conv;S.color=color;};
   if(S.trend==='up'){
-    if(lean==='cont') V('UPTREND LIKELY TO CONTINUE','Move is <b>spot-led</b>: new positions without a funding blowout. Reads as accumulation with fresh conviction.','spot-led accumulation','fresh conviction · broadening','var(--aqua)');
-    else if(lean==='rev') V('UPTREND LOOKS EXHAUSTED','<b>Perps have taken the wheel</b> — price is being rented with leverage at stretched funding. Vulnerable to a long flush.','crowded leverage','rented · fragile','var(--coral)');
+    if(lean==='cont'){
+      const b=[];
+      if(S.oiHas && S.oiChg>2) b.push('new positions entering without a funding blowout');
+      if(S.fFlip>0) b.push('funding just flipped positive off a negative base — trapped shorts feeding it');
+      if(!b.length && S.pBand==='low' && (S.fBand==='neutral'||S.fBand==='elevated')) b.push('the perp is tracking spot with funding at baseline');
+      const sub = b.length
+        ? 'Move is <b>spot-led</b>: '+joinAnd(b)+'. Reads as accumulation with fresh conviction.'
+        : 'Move is <b>spot-led</b> — no funding or premium blowout. Reads as accumulation rather than chasing.';
+      V('UPTREND LIKELY TO CONTINUE', sub, 'spot-led accumulation','fresh conviction · broadening','var(--aqua)');
+    }
+    else if(lean==='rev'){
+      const d=longDrivers(S); let sub, regime='crowded leverage', conv='rented · fragile';
+      if(d.length) sub='<b>Perps have taken the wheel</b> — '+joinAnd(d)+'. The move is being rented with leverage; vulnerable to a long flush.';
+      else if(S.oiHas && S.oiChg<-2){ sub='Rally looks like <b>short-covering</b>, not fresh demand — OI is falling as price rises. Tends to fade once shorts are out.'; regime='short-covering'; conv='fading'; }
+      else sub='Leaning crowded-long — the move looks more rented than bought, vulnerable to a flush.';
+      V('UPTREND LOOKS EXHAUSTED', sub, regime, conv, 'var(--coral)');
+    }
     else V('UPTREND — MIXED, NO EDGE','Cross-currents: some real demand, some crowding. Not a clean structural call either way.','two-sided','undecided','var(--gold)');
   } else if(S.trend==='down'){
-    if(lean==='cont') V('DOWNTREND LIKELY TO CONTINUE','Sellers in control — fresh shorts pressing on contained funding, no squeeze pressure yet.','shorts pressing','seller-led','var(--coral)');
-    else if(lean==='rev') V('DOWNTREND MAY BE TURNING','Crowded shorts at stretched funding and/or a deleveraging flush — the setup for a squeeze higher.','crowded shorts / flush','squeeze risk','var(--aqua)');
+    if(lean==='cont'){
+      const b=[];
+      if(S.oiHas && S.oiChg>2) b.push('fresh shorts pressing in');
+      b.push((S.fBand==='neutral'||S.fBand==='elevated') ? 'funding still contained' : 'funding not yet stretched');
+      V('DOWNTREND LIKELY TO CONTINUE','Sellers in control — '+joinAnd(b)+', no squeeze pressure yet.','shorts pressing','seller-led','var(--coral)');
+    }
+    else if(lean==='rev'){
+      const all=shortDrivers(S); if(S.oiHas && S.oiChg<-2) all.push('a deleveraging flush');
+      const sub = all.length
+        ? 'Setup for a squeeze higher — '+joinAnd(all)+'.'
+        : 'Crowded shorts and/or a deleveraging flush — the setup for a squeeze higher.';
+      V('DOWNTREND MAY BE TURNING', sub, 'crowded shorts / flush','squeeze risk','var(--aqua)');
+    }
     else V('DOWNTREND — MIXED, NO EDGE','No decisive positioning tilt. Trend intact but without strong structural confirmation.','two-sided','undecided','var(--gold)');
   } else {
-    if(lean==='rev') V('COILED — BREAK RISK BUILDING','Flat price masking stacked leverage. Whichever way it breaks tends to be violent.','leveraged coil','loaded','var(--gold)');
+    if(lean==='rev'){
+      const hot=[]; if(S.fBand==='extreme') hot.push('funding'); if(S.pBand==='extreme') hot.push('premium');
+      const sub = hot.length
+        ? 'Flat price masking stacked leverage — '+joinAnd(hot)+' at an extreme. Whichever way it breaks tends to be violent.'
+        : 'Flat price masking stacked leverage. Whichever way it breaks tends to be violent.';
+      V('COILED — BREAK RISK BUILDING', sub, 'leveraged coil','loaded','var(--gold)');
+    }
     else V('RANGING — NO TREND TO READ','Price and positioning both balanced. Nothing structurally pressing yet.','balanced','quiet','var(--gold)');
   }
 
