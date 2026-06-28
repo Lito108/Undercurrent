@@ -554,6 +554,25 @@ function analyze(m){
     else V('RANGING — NO TREND TO READ','Price and positioning both balanced. Nothing structurally pressing yet.','balanced','quiet','var(--gold)');
   }
 
+  // ---- conviction gate ----
+  // The net read is a *direction* ratio (which way the evidence leans) and can
+  // hit ±100 on very little evidence; strength captures the *amount*. When
+  // strength is below the floor, hold back the confident verdict so a thin run
+  // can't read as a strong call — the headline goes neutral and the net number
+  // recolors with it. Extreme funding is exempt: it's a strong signal on its own.
+  const CONV_FLOOR = 25;
+  S.lowConv = S.strength < CONV_FLOOR && S.fBand !== 'extreme';
+  if(S.lowConv){
+    const dir = S.score>3 ? 'tilts bullish' : S.score<-3 ? 'tilts bearish' : 'is balanced';
+    const why = S.oiHas
+      ? 'Signals are sparse and not confirming each other.'
+      : 'Thin evidence so far — funding, premium and price only, with OI still sampling.';
+    const tl = S.trend==='up' ? 'UPTREND' : S.trend==='down' ? 'DOWNTREND' : 'RANGE';
+    V(tl+' — LOW CONVICTION',
+      why+' The read '+dir+', but there isn’t enough structural weight to trust it as a continuation-or-reversal call yet.',
+      'thin evidence','sparse · not actionable','var(--gold)');
+  }
+
   /* ====== gauge polarity: spot-led(-1) <-> perp-led/crowded(+1) ====== */
   let perpLed=0, spotLed=0.6;
   if(S.fNow!=null){ const fe=clamp(Math.abs(ann(S.fNow))/90,0,1); perpLed += fe*1.4; if(S.fBand==='neutral') spotLed+=0.9; if(S.fBand==='elevated') spotLed+=0.3; }
@@ -729,6 +748,7 @@ function drawSpark(id, series, color){
 function methodologyHTML(S){
   return `
   <p>Undercurrent runs a transparent, rule-based read over your <b>${LOOKBACK}h</b> window — no black box, no ML. Every input is <b>Hyperliquid</b>'s own data. Each signal pulls toward one of two poles, and the net decides the verdict.</p>
+  <p><b>Net read vs conviction.</b> The big number is a <i>direction</i> ratio: how lopsided the evidence is, −100 to +100. <b>Conviction</b> is the separate matter of <i>how much</i> evidence there is. A thin run can point one way at ±100 on almost nothing — so when conviction falls below a floor, the headline is held back to a <span style="color:var(--gold)">low-conviction</span> read regardless of the ratio (extreme funding is exempt — it's a strong signal on its own). The raw cells still show everything; only the confident call is gated until the evidence earns it.</p>
   <p><b>The core cross-signal.</b> Price↑ with OI↑ is ambiguous on its own. It's <span style="color:var(--aqua)">accumulation</span> when funding stays near baseline and the perp premium is low (spot is leading, new money isn't overpaying). It's <span style="color:var(--coral)">crowded leverage</span> when funding runs hot and perps trade over the oracle (the move is being rented, not bought). Price↑ on OI↓ is short-covering, not fresh demand; Price↓ on OI↑ with deeply negative funding is squeeze fuel.</p>
   <p><b>Funding.</b> HL funds <i>hourly</i>; the cell headlines the <b>annualized</b> rate with the native hourly figure beneath. Bands (per-8h-equivalent): neutral ≤0.015%, elevated ≤0.04%, high ≤0.085%, extreme above. A <b>flip</b> is funding crossing zero across the window; <b>funding Δ</b> is the change in annualized funding. <b>Perp premium</b> = (mark−oracle)/oracle, with <b>premium Δ</b> tracking whether perps are pressing over spot or converging back.</p>
   <p><b>Open interest.</b> Hyperliquid exposes a live OI snapshot but <b>no OI-history endpoint</b>, so the tool samples the live reading locally (in your browser) and builds the series as you re-run a coin. OI only enters the score once the series spans ≥${Math.max(3, Math.round(LOOKBACK*0.5))}h with ≥4 points; until then the cell shows live notional and the verdict leans on funding, premium and price. <b>Acceleration</b> compares the 2nd half of the window's OI rate-of-change against the 1st (pp = percentage points).</p>
