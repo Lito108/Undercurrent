@@ -535,6 +535,12 @@ function analyze(m){
   const tot = cont+rev;
   S.score = tot>0 ? Math.round((cont-rev)/tot*100) : 0;
   S.strength = Math.round(clamp((Math.abs(cont-rev)*1.4 + tot*0.25), 0, 100));
+  // The net number shown to the user is the direction ratio weighted by
+  // conviction, so a thin run reads as a small figure near zero instead of a
+  // dramatic ±100, and only firms up as signals confirm each other. It saturates
+  // to the full ratio once conviction is genuinely high. Raw S.score is left
+  // untouched — it still drives the verdict and the conviction gate.
+  S.netShown = Math.round(S.score * Math.min(1, S.strength/80));
   S.cont=cont; S.rev=rev;
 
   // verdict text
@@ -605,7 +611,7 @@ function render(name, venues, S){
   const vc = $('#vcard'); vc.style.setProperty('--vc', S.color);
   $('#vcall').textContent = S.call;
   $('#vsub').innerHTML = S.sub;
-  $('#vnum').textContent = (S.score>0?'+':'')+S.score;
+  $('#vnum').textContent = (S.netShown>0?'+':'')+S.netShown;
   // gauge
   requestAnimationFrame(()=>{ $('#gmark').style.left = ((S.polarity+1)/2*100).toFixed(1)+'%'; });
   $('#sfill').style.width = S.strength+'%';
@@ -748,7 +754,7 @@ function drawSpark(id, series, color){
 function methodologyHTML(S){
   return `
   <p>Undercurrent runs a transparent, rule-based read over your <b>${LOOKBACK}h</b> window — no black box, no ML. Every input is <b>Hyperliquid</b>'s own data. Each signal pulls toward one of two poles, and the net decides the verdict.</p>
-  <p><b>Net read vs conviction.</b> The big number is a <i>direction</i> ratio: how lopsided the evidence is, −100 to +100. <b>Conviction</b> is the separate matter of <i>how much</i> evidence there is. A thin run can point one way at ±100 on almost nothing — so when conviction falls below a floor, the headline is held back to a <span style="color:var(--gold)">low-conviction</span> read regardless of the ratio (extreme funding is exempt — it's a strong signal on its own). The raw cells still show everything; only the confident call is gated until the evidence earns it.</p>
+  <p><b>Net read &amp; conviction.</b> The big number is the evidence's <i>direction</i> — which way it leans and how cleanly — <b>weighted by conviction</b>, the amount of evidence behind it. So a thin run reads as a small figure near zero rather than a dramatic ±100, and only firms up as signals confirm each other; <b>conviction</b> itself is shown on its own bar. When conviction sits below a floor the headline is also held back to a <span style="color:var(--gold)">low-conviction</span> read regardless of direction (extreme funding is exempt — a strong signal on its own). The raw per-signal cells always show everything; only the headline and the net figure are tempered until the evidence earns them.</p>
   <p><b>The core cross-signal.</b> Price↑ with OI↑ is ambiguous on its own. It's <span style="color:var(--aqua)">accumulation</span> when funding stays near baseline and the perp premium is low (spot is leading, new money isn't overpaying). It's <span style="color:var(--coral)">crowded leverage</span> when funding runs hot and perps trade over the oracle (the move is being rented, not bought). Price↑ on OI↓ is short-covering, not fresh demand; Price↓ on OI↑ with deeply negative funding is squeeze fuel.</p>
   <p><b>Funding.</b> HL funds <i>hourly</i>; the cell headlines the <b>annualized</b> rate with the native hourly figure beneath. Bands (per-8h-equivalent): neutral ≤0.015%, elevated ≤0.04%, high ≤0.085%, extreme above. A <b>flip</b> is funding crossing zero across the window; <b>funding Δ</b> is the change in annualized funding. <b>Perp premium</b> = (mark−oracle)/oracle, with <b>premium Δ</b> tracking whether perps are pressing over spot or converging back.</p>
   <p><b>Open interest.</b> Hyperliquid exposes a live OI snapshot but <b>no OI-history endpoint</b>, so the tool samples the live reading locally (in your browser) and builds the series as you re-run a coin. OI only enters the score once the series spans ≥${Math.max(3, Math.round(LOOKBACK*0.5))}h with ≥4 points; until then the cell shows live notional and the verdict leans on funding, premium and price. <b>Acceleration</b> compares the 2nd half of the window's OI rate-of-change against the 1st (pp = percentage points).</p>
