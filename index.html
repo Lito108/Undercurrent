@@ -328,11 +328,39 @@ async function J(url, opts={}){
 
 /* ---------- Hyperliquid endpoint ---------- */
 const HL = 'https://api.hyperliquid.xyz/info';
-function hlPost(body){
+async function hlPost(body){
   // Hyperliquid's /info endpoint requires application/json — it returns HTTP 415
-  // for other content types. This triggers a CORS preflight, which HL answers
-  // correctly on a normal https origin (only the in-app preview sandbox blocks it).
-  return J(HL, {method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'application/json'}});
+  // for other content types. This triggers a CORS preflight, answered fine on a
+  // normal https origin (only the in-app preview sandbox blocks it). On a 429
+  // (rate limit) we back off briefly and retry, since the window is short.
+  const opts={method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'application/json'}};
+  let lastErr;
+  for(let attempt=0; attempt<3; attempt++){
+    try{ return await J(HL, opts); }
+    catch(e){
+      lastErr=e;
+      if(/\b429\b/.test((e&&e.message)||'') && attempt<2){
+        await new Promise(r=>setTimeout(r, 1000*(attempt+1)));   // 1s, then 2s
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
+// The universe + all asset contexts change little second-to-second, so cache the
+// metaAndAssetCtxs response briefly. A burst of reads then makes far fewer
+// requests, which is the main way to avoid tripping Hyperliquid's per-IP rate
+// limit yourself. Current funding/mark/OI shown can be up to this many ms stale;
+// price and funding *history* are always fetched fresh.
+let _meta={t:0,d:null};
+async function getMeta(){
+  const now=Date.now();
+  if(_meta.d && now-_meta.t < 15000) return _meta.d;
+  const d=await hlPost({type:'metaAndAssetCtxs'});
+  _meta={t:now,d};
+  return d;
 }
 
 /* ---------- ticker -> Hyperliquid coin resolution ----------
@@ -379,10 +407,8 @@ function sampleOI(coin, oiCoins, nowMs){
 
 /* ---------- Hyperliquid fetch ---------- */
 async function getHyperliquid(input){
-  // (1) universe + live asset contexts in one call
-  let meta;
-  try{ meta = await hlPost({type:'metaAndAssetCtxs'}); }
-  catch(e){ throw new Error('Could not reach Hyperliquid ('+(e.message||'network error')+'). Check connectivity — a blocker or VPN may be interfering.'); }
+  // (1) universe + live asset contexts (cached briefly)
+  const meta = await getMeta();
   const universe = (meta && meta[0] && meta[0].universe) || [];
   const ctxs     = (meta && meta[1]) || [];
   const coin = resolveCoin(input, universe);
@@ -401,10 +427,13 @@ async function getHyperliquid(input){
   const start = now - (LOOKBACK+6)*3600*1000;
   const keep  = LOOKBACK+1;                          // align series to the labeled window
 
-  // (2) hourly price candles + (3) hourly funding/premium history — parallel
+  // (2) hourly price candles + (3) hourly funding/premium history — parallel.
+  // Swallow ordinary failures to empty (handled downstream), but let a 429
+  // propagate so the rate-limit message is shown rather than a vague one.
+  const soft = p => p.catch(e=>{ if(/\b429\b/.test((e&&e.message)||'')) throw e; return []; });
   const [candles, fhist] = await Promise.all([
-    hlPost({type:'candleSnapshot', req:{coin, interval:'1h', startTime:start, endTime:now}}).catch(()=>[]),
-    hlPost({type:'fundingHistory', coin, startTime:start, endTime:now}).catch(()=>[]),
+    soft(hlPost({type:'candleSnapshot', req:{coin, interval:'1h', startTime:start, endTime:now}})),
+    soft(hlPost({type:'fundingHistory', coin, startTime:start, endTime:now})),
   ]);
 
   const C = (Array.isArray(candles)?candles.slice():[]).sort((a,b)=>a.t-b.t);
@@ -890,7 +919,15 @@ async function run(ticker){
     window._S=S;
     st.className='status';
   }catch(e){
-    st.className='status show err'; st.textContent='⚠ '+e.message;
+    const msg=(e&&e.message)||'error';
+    let show;
+    if(/\b429\b/.test(msg))
+      show='Hyperliquid is rate-limiting (HTTP 429) — too many requests in a short window. Wait ~30–60s and try again. The limit is per-IP, so switching Wi-Fi ↔ mobile data usually clears it instantly.';
+    else if(/Failed to fetch|NetworkError|timed out|HTTP 5\d\d/i.test(msg))
+      show='Could not reach Hyperliquid ('+msg+'). Check connectivity, or a blocker/VPN may be interfering.';
+    else
+      show=msg;   // e.g. not-a-perp, or price-history message
+    st.className='status show err'; st.textContent='⚠ '+show;
     $('#res').classList.remove('show');
   } finally { $('#go').disabled=false; }
 }
