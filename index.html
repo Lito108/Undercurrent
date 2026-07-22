@@ -299,7 +299,6 @@
 
 const $ = s => document.querySelector(s);
 const fmtPct = (x,d=2) => (x>=0?'+':'') + x.toFixed(d) + '%';
-const fmtF   = x => (x>=0?'+':'') + (x*100).toFixed(4) + '%';
 const ann    = f => f*3*365*100; // funding (per-8h-equivalent) -> annualized %
 const clamp  = (x,a,b)=>Math.max(a,Math.min(b,x));
 const fmtUsd = n => { if(n==null||!isFinite(n)) return '—';
@@ -386,26 +385,69 @@ function resolveCoin(input, universe){
    short series. Stored in COIN units (decoupled from price) so rate-of-change is
    pure position growth. Fully optional: any storage failure degrades to
    "current only" without breaking the read. Deduped to ~hourly, pruned at 3d. */
-function sampleOI(coin, oiCoins, nowMs){
-  const empty = {oi:[], oiTime:[]};
-  if(oiCoins==null || !isFinite(oiCoins)) return empty;
-  let store={};
-  try{ const raw=localStorage.getItem('uc_oi'); if(raw) store=JSON.parse(raw)||{}; }
-  catch(e){ store={}; }                                 // storage blocked -> this run only
-  let arr = Array.isArray(store[coin]) ? store[coin] : [];
-  const last = arr[arr.length-1];
-  if(!last || (nowMs - last[0]) > 18*60*1000) arr.push([nowMs, oiCoins]);
-  else arr[arr.length-1] = [nowMs, oiCoins];            // refresh within the same bucket
-  const keepAfter = nowMs - 3*24*3600*1000;
-  arr = arr.filter(p=>p[0]>=keepAfter);
-  store[coin]=arr;
-  try{ localStorage.setItem('uc_oi', JSON.stringify(store)); }catch(e){}
+/* ---------- local OI sampling ----------
+   Hyperliquid exposes a live open-interest snapshot but no OI-history endpoint,
+   so history is accrued locally. The metaAndAssetCtxs response already carries
+   OI for the ENTIRE universe, so every read samples every coin at once — one
+   hourly point per coin, pruned at 3 days (~0.5MB worst case, well inside
+   localStorage limits). Stored in COIN units (price-decoupled) so rate-of-change
+   is pure position growth. Any storage failure degrades to "current run only"
+   without breaking the read. */
+function sampleUniverseOI(universe, ctxs, nowMs){
+  try{
+    const raw = localStorage.getItem('uc_oi');
+    const store = raw ? (JSON.parse(raw)||{}) : {};
+    const keepAfter = nowMs - 3*24*3600*1000, BUCKET = 55*60*1000;   // ~hourly
+    for(let i=0;i<universe.length;i++){
+      const name = universe[i] && universe[i].name;
+      const c = ctxs[i]; const oi = (c && c.openInterest!=null) ? +c.openInterest : null;
+      if(!name || oi==null || !isFinite(oi)) continue;
+      let arr = Array.isArray(store[name]) ? store[name] : [];
+      const last = arr[arr.length-1];
+      if(!last || (nowMs-last[0]) >= BUCKET) arr.push([nowMs, oi]);
+      else last[1] = oi;                    // refresh value, keep the bucket's timestamp
+      arr = arr.filter(p=>p[0]>=keepAfter);
+      if(arr.length) store[name]=arr; else delete store[name];
+    }
+    localStorage.setItem('uc_oi', JSON.stringify(store));
+    return store;
+  }catch(e){ return null; }                 // storage blocked
+}
+function readOI(coin, oiCoins, store, nowMs){
+  let arr = store && Array.isArray(store[coin]) ? store[coin] : null;
+  if(!arr) arr = (oiCoins!=null && isFinite(oiCoins)) ? [[nowMs, oiCoins]] : [];
   const winStart = nowMs - LOOKBACK*3600*1000;
   const win = arr.filter(p=>p[0]>=winStart);
   return { oi: win.map(p=>p[1]), oiTime: win.map(p=>p[0]) };
 }
 
-/* ---------- Hyperliquid fetch ---------- */
+/* ---------- Hyperliquid fetch ----------
+   Candle + funding history are fetched once for the LARGEST window (48h+6) and
+   cached briefly; every timeframe is then sliced from it locally. Toggling
+   12h/24h/48h or re-reading the same coin within the TTL costs zero extra
+   requests — and zero extra rate-limit weight. */
+const HIST_SPAN_H = 48+6, HIST_TTL = 120000;
+let _hist = {coin:null, t:0, C:[], F:[]};
+async function getHistory(coin){
+  const now = Date.now();
+  if(_hist.coin===coin && now-_hist.t < HIST_TTL) return _hist;
+  const start = now - HIST_SPAN_H*3600*1000;
+  // Swallow ordinary failures to empty (handled downstream), but let a 429
+  // propagate so the rate-limit message is shown rather than a vague one.
+  const soft = p => p.catch(e=>{ if(/\b429\b/.test((e&&e.message)||'')) throw e; return []; });
+  const [candles, fhist] = await Promise.all([
+    soft(hlPost({type:'candleSnapshot', req:{coin, interval:'1h', startTime:start, endTime:now}})),
+    soft(hlPost({type:'fundingHistory', coin, startTime:start, endTime:now})),
+  ]);
+  const res = {
+    coin, t: now,
+    C: (Array.isArray(candles)?candles.slice():[]).sort((a,b)=>a.t-b.t),
+    F: (Array.isArray(fhist)?fhist.slice():[]).sort((a,b)=>a.time-b.time),
+  };
+  if(res.C.length || res.F.length) _hist = res;   // don't cache a failed fetch
+  return res;
+}
+
 async function getHyperliquid(input){
   // (1) universe + live asset contexts (cached briefly)
   const meta = await getMeta();
@@ -421,36 +463,28 @@ async function getHyperliquid(input){
   out.index = ctx.oraclePx !=null ? +ctx.oraclePx : null;
   // HL funding is per-HOUR; store per-8h-equivalent so bands/annualization match
   out.fundingNow = ctx.funding!=null ? (+ctx.funding)*8 : null;
+  out.dayVlm = ctx.dayNtlVlm!=null ? +ctx.dayNtlVlm : null;   // 24h notional volume (USD)
   const oiCoins = ctx.openInterest!=null ? +ctx.openInterest : null;   // coin units
 
-  const now   = Date.now();
-  const start = now - (LOOKBACK+6)*3600*1000;
-  const keep  = LOOKBACK+1;                          // align series to the labeled window
+  const now  = Date.now();
+  const keep = LOOKBACK+1;                     // align series to the labeled window
 
-  // (2) hourly price candles + (3) hourly funding/premium history — parallel.
-  // Swallow ordinary failures to empty (handled downstream), but let a 429
-  // propagate so the rate-limit message is shown rather than a vague one.
-  const soft = p => p.catch(e=>{ if(/\b429\b/.test((e&&e.message)||'')) throw e; return []; });
-  const [candles, fhist] = await Promise.all([
-    soft(hlPost({type:'candleSnapshot', req:{coin, interval:'1h', startTime:start, endTime:now}})),
-    soft(hlPost({type:'fundingHistory', coin, startTime:start, endTime:now})),
-  ]);
-
-  const C = (Array.isArray(candles)?candles.slice():[]).sort((a,b)=>a.t-b.t);
+  // (2)+(3) hourly candles + funding/premium history, from the shared cache
+  const {C, F} = await getHistory(coin);
   out.price = C.map(c=>+c.c).slice(-keep);
+  out.vol   = C.map(c=>+c.v).slice(-keep);     // hourly volume (coin units)
+  out.funding  = F.map(x=>(+x.fundingRate)*8).slice(-keep);   // per-8h-equivalent series
+  out.premHist = F.map(x=>(+x.premium)*100).slice(-keep);      // perp premium %, chronological
 
-  const F = (Array.isArray(fhist)?fhist.slice():[]).sort((a,b)=>a.time-b.time);
-  out.funding  = F.map(x=>(+x.fundingRate)*8).slice(-keep);     // per-8h-equivalent series
-  out.premHist = F.map(x=>(+x.premium)*100).slice(-keep);        // perp premium %, chronological
-
-  // (4) OI: accrue/read the local sample series (coin units)
-  const s = sampleOI(coin, oiCoins, now);
+  // (4) OI: sample the WHOLE universe from the ctxs already in hand (free — no
+  // extra request), then read back the windowed series for this coin. Every
+  // read builds OI history for every coin, so the OI signal matures across the
+  // board from any usage, not only for coins you happen to re-read.
+  const store = sampleUniverseOI(universe, ctxs, now);
+  const s = readOI(coin, oiCoins, store, now);
   out.oi = s.oi; out.oiTime = s.oiTime;
   out.oiNow = (oiCoins!=null && out.mark!=null) ? oiCoins*out.mark : null; // USD notional (display)
   out.oiSamples = s.oi.length;
-
-  // HL does not publish taker buy/sell flow or account long/short ratios
-  out.taker = []; out.ls = [];
   return out;
 }
 
@@ -532,18 +566,22 @@ function analyze(m){
     S.premStart=m.premHist[0]; S.premNow=m.premHist[m.premHist.length-1];
     S.premTrend=S.premNow - S.premStart;
   } else S.premTrend=null;
-  // ---- taker / positioning ----
-  S.takerNow = m.taker.length?m.taker[m.taker.length-1]:null;
-  S.takerAvg = m.taker.length?m.taker.reduce((a,b)=>a+b,0)/m.taker.length:null;
-  S.lsNow = m.ls.length?m.ls[m.ls.length-1]:null;
-  S.lsTrend = m.ls.length>=2 ? m.ls[m.ls.length-1]-m.ls[0] : null;
+  // ---- volume (participation across the window; display-only, not scored) ----
+  if(m.vol && m.vol.length>=4){
+    const h  = Math.floor(m.vol.length/2);
+    const r1 = m.vol.slice(0,h).reduce((a,b)=>a+b,0)/h;                 // hourly rate, 1st half
+    const r2 = m.vol.slice(h).reduce((a,b)=>a+b,0)/(m.vol.length-h);    // hourly rate, 2nd half
+    S.volChg = r1>0 ? (r2-r1)/r1*100 : null;
+    S.volNtl = S.priceLast!=null ? m.vol.reduce((a,b)=>a+b,0)*S.priceLast : null; // ~USD traded in window
+    S.volHas = S.volChg!=null;
+  } else S.volHas=false;
+  // ---- OI turnover: open interest vs 24h traded volume (display-only) ----
+  S.oiTurn = (m.oiNow!=null && m.dayVlm>0) ? m.oiNow/m.dayVlm : null;
 
   /* ====== continuation vs reversal evidence ======
      cont = trend persists, rev = trend flips. Both >= 0. */
   let cont=0, rev=0;
   const fPos = S.fNow>0, fNeg = S.fNow<0;
-  const crowdedLong  = S.lsNow!=null && S.lsNow>2.2;
-  const crowdedShort = S.lsNow!=null && S.lsNow<0.85;
 
   if(S.trend==='up'){
     if(oiUp){
@@ -557,18 +595,14 @@ function analyze(m){
     if(S.fFlip>0 && S.fBand!=='extreme'){ cont+=14; S.flags.push(['fund','Funding flipped positive off a negative base — trapped shorts feeding the move.']); }
     if(S.prem!=null){ if(S.pBand==='low'||S.pBand==='moderate') cont+=8; if(S.pBand==='high') rev+=10; if(S.pBand==='extreme') rev+=18; }
     if(fPos && (S.fBand==='high'||S.fBand==='extreme')) rev+=10;
-    if(S.takerAvg!=null){ if(S.takerAvg>1.08 && (S.fBand==='neutral'||S.fBand==='elevated')) cont+=10; if(S.takerAvg>1.25 && (S.fBand==='high'||S.fBand==='extreme')) rev+=8; }
-    if(crowdedLong){ rev+=14; S.flags.push(['pos','Account positioning skewed heavily long — crowded side.']); }
-    if(S.lsTrend!=null && S.lsTrend>0.4) rev+=6;
   }
   else if(S.trend==='down'){
     if(oiUp){
       if(S.fBand==='neutral'||S.fBand==='elevated'){ cont+=30; S.flags.push(['oi','Fresh shorts pressing into weakness — sellers in control.']); }
-      if((fNeg&&(S.fBand==='high'||S.fBand==='extreme'))||crowdedShort){ rev+=34; S.flags.push(['oi','Heavy crowded shorts at stretched funding — squeeze fuel building.']); }
+      if(fNeg&&(S.fBand==='high'||S.fBand==='extreme')){ rev+=34; S.flags.push(['oi','Heavy crowded shorts at stretched funding — squeeze fuel building.']); }
     }
     if(oiDn){ rev+=18; S.flags.push(['oi','Down move on shrinking OI — looks like a flush/deleverage, not trend.']); }
     if(S.fFlip<0 && S.fBand!=='extreme'){ rev+=8; }
-    if(crowdedShort){ rev+=14; }
     if(fNeg && S.fBand==='extreme'){ rev+=12; }
     if(S.prem!=null && S.pBand==='extreme' && S.prem<0) rev+=10;
   }
@@ -675,8 +709,6 @@ function analyze(m){
     perpLed += clamp(lev/4,0,1)*0.9;
     if(lev<1.5) spotLed+=0.5;
   }
-  if(crowdedLong||crowdedShort) perpLed += 0.7;
-  if(S.takerAvg!=null && S.takerAvg>1.08 && (S.fBand==='neutral'||S.fBand==='elevated')) spotLed+=0.5;
   if(m.onchain){ if(m.onchain.netPct<-1) spotLed+=0.8; if(m.onchain.netPct>1) perpLed+=0.8; }
   S.polarity = clamp((perpLed - spotLed)/(perpLed + spotLed + 0.8), -1, 1);
 
@@ -733,6 +765,9 @@ function render(name, venues, S){
   // open interest — HL live snapshot; history is locally sampled and matures over time
   {
     let p='na', d='', val, sub;
+    const turn = S.oiTurn!=null
+      ? ' · OI '+(S.oiTurn>=1 ? S.oiTurn.toFixed(1)+'× 24h vol' : Math.round(S.oiTurn*100)+'% of 24h vol')
+      : '';
     if(S.oiHas){
       const acc = S.oiAccel>0;
       if(S.trend==='up'){ p = (S.fBand==='neutral'||S.fBand==='elevated')&&S.oiChg>0 ? 'acc' : (S.oiChg>0?'crd':'neu'); }
@@ -740,10 +775,10 @@ function render(name, venues, S){
       else p='neu';
       d = (S.oiChg>0?'Rising':'Falling')+(acc?', accelerating':', decelerating')+' over window.';
       val = fmtPct(S.oiChg,1);
-      sub = 'accel '+(S.oiAccel>=0?'+':'')+S.oiAccel.toFixed(1)+'pp';
+      sub = 'accel '+(S.oiAccel>=0?'+':'')+S.oiAccel.toFixed(1)+'pp'+turn;
     } else {
       val = fmtUsd(S.oiNow);
-      sub = 'live notional';
+      sub = 'live notional'+turn;
       const need = Math.max(3, Math.round(LOOKBACK*0.5));
       d = (S.oiN>1)
         ? 'Sampling — '+S.oiN+' pts over '+S.oiSpanH.toFixed(1)+'h; Δ unlocks at ≥'+need+'h.'
@@ -766,6 +801,23 @@ function render(name, venues, S){
   // price
   cells.push(['price · '+LOOKBACK+'h', S.priceChg!=null?fmtPct(S.priceChg,2):'n/a',
     'Prevailing trend: <b>'+S.trend.toUpperCase()+'</b>', S.trend==='up'?'acc':S.trend==='down'?'crd':'neu']);
+  // volume — participation across the window (from the same candles; display-only)
+  {
+    let p='na', d='Volume history unavailable.', sub='';
+    if(S.volHas){
+      sub = '2nd vs 1st half rate'+(S.volNtl!=null?(' · '+fmtUsd(S.volNtl)+' traded'):'');
+      if(S.trend==='up'){
+        if(S.volChg>15){ p='acc'; d='Participation rising with the move.'; }
+        else if(S.volChg<-15){ p='crd'; d='Advancing on thinning volume — participation fading.'; }
+        else { p='neu'; d='Participation steady.'; }
+      } else if(S.trend==='down'){
+        if(S.volChg>15){ p='neu'; d='Selling on rising volume — conviction behind the move.'; }
+        else if(S.volChg<-15){ p='neu'; d='Down move losing volume — pressure easing.'; }
+        else { p='neu'; d='Participation steady.'; }
+      } else { p='neu'; d=S.volChg>15?'Volume building in the range.':'Quiet tape.'; }
+    }
+    cells.push(['volume Δ · '+LOOKBACK+'h', S.volHas?fmtPct(S.volChg,0):'n/a', sub+(d?'<br>'+d:''), p]);
+  }
   // funding Δ over window — replaces taker flow (not exposed by HL)
   {
     let p='neu',d='';
@@ -844,7 +896,7 @@ function methodologyHTML(S){
   <p><b>Net read &amp; conviction.</b> The big number is the evidence's <i>direction</i> — which way it leans and how cleanly — <b>weighted by conviction</b>, the amount of evidence behind it. So a thin run reads as a small figure near zero rather than a dramatic ±100, and only firms up as signals confirm each other; <b>conviction</b> itself is shown on its own bar. When conviction sits below a floor the headline is also held back to a <span style="color:var(--gold)">low-conviction</span> read regardless of direction (extreme funding is exempt — a strong signal on its own). The raw per-signal cells always show everything; only the headline and the net figure are tempered until the evidence earns them.</p>
   <p><b>The core cross-signal.</b> Price↑ with OI↑ is ambiguous on its own. It's <span style="color:var(--aqua)">accumulation</span> when funding stays near baseline and the perp premium is low (spot is leading, new money isn't overpaying). It's <span style="color:var(--coral)">crowded leverage</span> when funding runs hot and perps trade over the oracle (the move is being rented, not bought). Price↑ on OI↓ is short-covering, not fresh demand; Price↓ on OI↑ with deeply negative funding is squeeze fuel.</p>
   <p><b>Funding.</b> HL funds <i>hourly</i>; the cell headlines the <b>annualized</b> rate with the native hourly figure beneath. Bands (per-8h-equivalent): neutral ≤0.015%, elevated ≤0.04%, high ≤0.085%, extreme above. A <b>flip</b> is funding crossing zero across the window; <b>funding Δ</b> is the change in annualized funding. <b>Perp premium</b> = (mark−oracle)/oracle, with <b>premium Δ</b> tracking whether perps are pressing over spot or converging back.</p>
-  <p><b>Open interest.</b> Hyperliquid exposes a live OI snapshot but <b>no OI-history endpoint</b>, so the tool samples the live reading locally (in your browser) and builds the series as you re-run a coin. OI only enters the score once the series spans ≥${Math.max(3, Math.round(LOOKBACK*0.5))}h with ≥4 points; until then the cell shows live notional and the verdict leans on funding, premium and price. <b>Acceleration</b> compares the 2nd half of the window's OI rate-of-change against the 1st (pp = percentage points).</p>
+  <p><b>Open interest.</b> Hyperliquid exposes a live OI snapshot but <b>no OI-history endpoint</b>, so the tool samples locally (in your browser). Each read captures OI for <b>every coin in the universe at once</b> — the data is already in the response — so history builds across the whole board from any usage, not just coins you re-read. OI only enters the score once the series spans ≥${Math.max(3, Math.round(LOOKBACK*0.5))}h with ≥4 points; until then the cell shows live notional (with OI as a share of 24h volume) and the verdict leans on funding, premium and price. <b>Acceleration</b> compares the 2nd half of the window's OI rate-of-change against the 1st (pp = percentage points). <b>Volume Δ</b> compares 2nd-half vs 1st-half hourly turnover from the same candles — participation rising or thinning — shown for context, not scored.</p>
   <p><b>Not available from HL:</b> taker buy/sell flow and account long/short ratios aren't published, so those slots carry funding-Δ and premium-Δ instead — both read directly from HL's funding history.</p>
   <p><b>On-chain</b> (optional) reads net token flow to/from major exchange wallets via Etherscan: outflow = accumulation/holding (bullish overlay), inflow = supply moving to sell (bearish overlay). It nudges the verdict and gauge but never overrides the derivatives core.</p>
   <p style="color:var(--muted2)"><b>Data:</b> Hyperliquid public info API. When a field reads <code>n/a</code> it was unavailable and was left out of the score (which lowers conviction rather than guessing).</p>`;

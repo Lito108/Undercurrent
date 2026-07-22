@@ -8,7 +8,7 @@
      to the market/on-chain API hosts bypass the cache so you never read stale
      prices, funding, or flows. */
 
-const CACHE = 'undercurrent-v1';
+const CACHE = 'undercurrent-v2';
 const SHELL = ['./index.html', './manifest.webmanifest'];
 
 // hosts whose responses must always be live (never cached)
@@ -46,6 +46,12 @@ self.addEventListener('fetch', (e) => {
   // Live data hosts: straight to the network, no cache read or write.
   if (LIVE_HOSTS.has(url.hostname)) return;
 
+  // Any other cross-origin request (Google Fonts, etc.): don't intercept.
+  // Caching cross-origin responses stores them as "opaque", which Chrome pads
+  // to several MB each for privacy — bloating the storage quota for zero
+  // benefit. The browser's normal HTTP cache handles these fine.
+  if (url.origin !== self.location.origin) return;
+
   // Everything else (app shell, manifest, fonts): NETWORK-FIRST.
   // Serve fresh from network; fall back to cache only if the network is slow
   // (NET_TIMEOUT) or fails. The cache is still refreshed whenever the network
@@ -55,7 +61,7 @@ self.addEventListener('fetch', (e) => {
 
     // network fetch that also refreshes the cache on success
     const netP = fetch(req).then((res) => {
-      if (res && (res.ok || res.type === 'opaque')) {
+      if (res && res.ok) {
         cache.put(req, res.clone()).catch(() => {});
       }
       return res;
